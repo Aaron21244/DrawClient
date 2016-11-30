@@ -7,41 +7,30 @@ package drawclient;
 
 import static drawclient.DrawClient.drawingPanel;
 import java.awt.BasicStroke;
-import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.Component;
-import java.awt.Container;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.Insets;
 import java.awt.RenderingHints;
-import java.awt.Shape;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.image.BufferedImage;
-import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.Serializable;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Stack;
 import java.util.Vector;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.imageio.ImageIO;
-import javax.swing.ComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JColorChooser;
 import javax.swing.JComboBox;
@@ -69,6 +58,7 @@ public class DrawClient{
     static JPanel drawingPanel;
     static JPanel buttonsPanel;
     static JPanel colorsPanel;
+    static JPanel playBackToolsPanel;
     static JPanel menuPanel;
     static JPanel container;
 
@@ -118,6 +108,8 @@ public class DrawClient{
     //File IO Variables
     FileOutputStream fileOut;
     FileInputStream fileIn;
+    ObjectInputStream objIS;
+    ObjectOutputStream objOS;    
     File fName;
     
     DrawClient()
@@ -330,8 +322,11 @@ public class DrawClient{
                     //Add the point varible to the book->page->line
                     book.get(currentPage).get(book.get(currentPage).size()-1)
                             .add(point);
-
-
+                    if (isRecordingState)
+                    {
+                        objOS.writeObject(point);
+                        flushOS(objOS);
+                    }
                 } catch (Throwable ex) 
                 {
                     ex.printStackTrace();
@@ -361,7 +356,11 @@ public class DrawClient{
                     //Add the point varible to the book->page->line
                     book.get(currentPage).get(book.get(currentPage).size()-1)
                             .add(point);
-
+                    if (isRecordingState)
+                    {
+                        objOS.writeObject(point);
+                        flushOS(objOS);
+                    }
                 } catch (Throwable ex) {
                     ex.printStackTrace();
                     System.out.println("Error in mouseDragged");
@@ -379,8 +378,9 @@ public class DrawClient{
         drawingPanel.addMouseMotionListener(mml);
         
         saveButton = new JButton("Save");
-        
+        saveButton.setEnabled(false);
         recordButton = new JButton("Record");
+        recordButton.addActionListener(ae -> initRecording());
         
         prevPageButton = new JButton("<");
         prevPageButton.addActionListener(ae -> prevPage());
@@ -397,6 +397,8 @@ public class DrawClient{
         jTxtArea = new JTextArea("C:" + String.valueOf(currentPage+1) 
                 + " T:" + String.valueOf(totalPages));
         jTxtArea.setEditable(false);
+        jTxtArea.setBackground(Color.LIGHT_GRAY);
+        jTxtArea.setToolTipText("Current and Total Pages");
         
         //Create Dropdown list for stroke Size selection
         strokeSizes = new Vector();
@@ -519,6 +521,7 @@ public class DrawClient{
      * Returns the container JPanel which is used to set the contentPane for
      * the Window.
      * 
+     * @return JPanel container
      */
     public JPanel getPanel()
     {
@@ -636,41 +639,118 @@ public class DrawClient{
      */
     public void initRecording()
     {
-        isRecordingState = !isRecordingState;
-        if (isRecordingState)
+        //If the client is NOT in a recording state
+        if (!isRecordingState)
         {
+            //Clear the board if anything currently exists before recording
+            newBoard();
+            isRecordingState = true;
             try {
                 //File (0) -> Open(2)
                 menuItems.get(0).get(1).setEnabled(false);
                 //File (0) -> Record (2)
                 menuItems.get(0).get(3).setText("Stop Recording");
+                recordButton.setText("Stop Recording");
                 recordEndTime = 0;
                 recordStartTime = System.nanoTime();
-                fName = openMenu();
-                //Create the file if it doesn't exisit
-                if (!fName.exists())
-                {
-                    fName = openMenu();
-                }
-                fileIn = new FileInputStream(fName);
-            } catch (Throwable ex) {
-                System.out.println("File Not Found!");
+                //Create a temporary directory named temp
+                //  to hold all the file
+                fName = new File("temp");
+                fName.mkdir();
+                //Create the file to holds the serialized points class
+                fName = new File("points.txt");
+                fileOut = new FileOutputStream(fName);
+                objOS = new ObjectOutputStream(fileOut);
+                objOS.writeObject(recordStartTime);
+                flushOS(objOS);
                 
-                //Reset Recording State and subMenu
-                isRecordingState = !isRecordingState;
+                /**
+                 * 
+                 * 
+                 * 
+                 * 
+                 * Throw thread for recording thread for voice here
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 */
+                
+            } 
+            catch (Throwable ex) 
+            {
+                System.out.println("File Not Found or error in thread!");
+                ex.printStackTrace();
                 //File (0) -> Open(2)
                 menuItems.get(0).get(1).setEnabled(true);
                 //File (0) -> Stop Recording (2)
                 menuItems.get(0).get(3).setText("Record");
+                recordButton.setText("Record");
             }
         }
+        //Else this function is called to finalize recording and close up lose
+        //  ends.
         else
         {
+            try {
+                //Set the final time the program stopped recording
+                recordEndTime = System.nanoTime() - recordStartTime;
+                objOS.writeObject(recordEndTime);
+                flushOS(objOS);
+                objOS.close();
+                
+                /**
+                 * 
+                 * 
+                 * 
+                 * Implement final voice implementations here
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 * 
+                 */
+                
+                //Reset Recording State and subMenu
+                isRecordingState = false;
+            } catch (IOException ex) {
+                ex.printStackTrace();
+                System.out.println("Error Closing objectOutputStream");
+            }
             //File (0) -> Open(2)
             menuItems.get(0).get(1).setEnabled(true);
             //File (0) -> Stop Recording (2)
             menuItems.get(0).get(3).setText("Record");
-            recordEndTime = System.nanoTime() - recordStartTime;
+            //Set the button back to normal
+            recordButton.setText("Record");
+            //Call saveMenu() to prompt the user for a file to save as
+            fName = saveMenu();
+        }
+    }
+    
+    /**
+     * Flushes the ObjectOutputStream passed to it
+     */
+    private void flushOS(ObjectOutputStream objOS)
+    {
+        try {
+            objOS.flush();
+        } catch (IOException ex) {
+            ex.printStackTrace();
+            System.out.println("Error flushing output stream");
         }
     }
     
@@ -692,21 +772,13 @@ public class DrawClient{
             //      to let the client know a the lineUndo() has been called.
             if (isRecordingState)
             {
-                /**
-                 * Implement code for outputting keywords to a file for the
-                 * lineUndo here
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 */
+                try {
+                    objOS.writeObject("\\lineUndo");
+                    flushOS(objOS);
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                    System.out.println("Error writing to file in lineRedo()");
+                }
             }
         }
     }
@@ -728,21 +800,13 @@ public class DrawClient{
             //      to let the client know a the lineRedo() has been called.
             if (isRecordingState)
             {
-                /**
-                 * Implement code for outputting keywords to a file for the
-                 * lineRedo here
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 */
+                try {
+                    objOS.writeObject("\\lineRedo");
+                    flushOS(objOS);
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                    System.out.println("Error writing to file in lineRedo()");
+                }
             }
         }
     }
@@ -778,21 +842,13 @@ public class DrawClient{
         //      to let the client know a page has been changed.
         if (isRecordingState)
         {
-            /**
-             * Implement code for outputting keywords to a file for the
-             * Next button here
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             */
+                try {
+                    objOS.writeObject("\\nextPage");
+                    flushOS(objOS);
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                    System.out.println("Error writing to file in lineRedo()");
+                }
         }
     }
     
@@ -821,21 +877,13 @@ public class DrawClient{
         //      to let the client know a page has been changed.
         if (isRecordingState)
         {
-            /**
-             * Implement code for outputting keywords to a file for the
-             * Previous button here
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             */
+            try {
+                objOS.writeObject("\\prevPage");
+                flushOS(objOS);
+            } catch (IOException ex) {
+                ex.printStackTrace();
+                System.out.println("Error writing to file in lineRedo()");
+            }
         }
     }
     
@@ -853,7 +901,7 @@ public class DrawClient{
     }
     
     /**
-     *  newBoard() initalizes all the Container items to a brand new state,
+     *  newBoard() initializes all the Container items to a brand new state,
      *  along with variables.
      * 
      */
@@ -868,6 +916,7 @@ public class DrawClient{
         buttonInit();
         updatePageButton();
         updateRedoButton();
+        updatePageCounter();
         setMenuItemStates(); //Re-enable menu items if they were disabled!
         drawingPanel.repaint();
     }
@@ -945,21 +994,13 @@ public class DrawClient{
             //      to let the client know a page has been changed.
             if (isRecordingState)
             {
-                /**
-                 * Implement code for outputting keywords to a file for the
-                 * Undo button here
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 */
+                try {
+                    objOS.writeObject(currentPage);
+                    flushOS(objOS);
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                    System.out.println("Error writing to file in updatePageButton()");
+                }
             }
         }
         //Else the Client is in a Consuming State
@@ -998,15 +1039,15 @@ public class DrawClient{
     }
     
     /**
-     *  updatePageCount() initalizes buttons to the current state of 
-     *  isProducerState. Used to quickly init.
+     *  updatePageCount() initializes buttons to the current state of 
+     *  isProducerState. Used to quickly initialize.
      * 
      */
     private void buttonInit()
     {
         prevPageButton.setEnabled(isProducerState);
         nextPageButton.setEnabled(isProducerState);
-        saveButton.setEnabled(isProducerState);
+//        saveButton.setEnabled(isProducerState);
         recordButton.setEnabled(isProducerState);
         undoButton.setEnabled(isProducerState);
         redoButton.setEnabled(isProducerState);
