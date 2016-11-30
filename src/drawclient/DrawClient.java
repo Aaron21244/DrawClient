@@ -25,6 +25,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
+import java.awt.image.BufferedImage;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
@@ -39,15 +40,18 @@ import java.util.Stack;
 import java.util.Vector;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.imageio.ImageIO;
 import javax.swing.ComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JColorChooser;
 import javax.swing.JComboBox;
+import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JTextArea;
 import javax.swing.colorchooser.AbstractColorChooserPanel;
 
 /**
@@ -79,6 +83,8 @@ public class DrawClient{
     JMenuBar menuBar;
     JColorChooser colChs;
     JComboBox strokeSizesBox;
+    JFileChooser jFC;
+    JTextArea jTxtArea;
     
     //undoBuffer holds all the lines Undone so they may be readded
     Stack undoBuffer;
@@ -114,7 +120,6 @@ public class DrawClient{
     FileInputStream fileIn;
     File fName;
     
-
     DrawClient()
     {
         //Initalize the book of Points
@@ -230,6 +235,16 @@ public class DrawClient{
         newMenuItem = new JMenuItem("Open", KeyEvent.VK_O);
         newMenuItem.addActionListener(ae ->{
             openFile();
+        });
+        fileMenu.add(newMenuItem);
+        //Add this menu item to the menuItem list
+        menuItems.get(menuItems.size()-1).add(newMenuItem);
+        
+        // File->Sava as Image, I - Mnemonic
+        jFC = new JFileChooser();
+        newMenuItem = new JMenuItem("Save as Image", KeyEvent.VK_I);
+        newMenuItem.addActionListener(ae ->{
+               exportImage();
         });
         fileMenu.add(newMenuItem);
         //Add this menu item to the menuItem list
@@ -379,6 +394,10 @@ public class DrawClient{
         redoButton = new JButton("Redo");
         redoButton.addActionListener(ae -> lineRedo());
         
+        jTxtArea = new JTextArea("C:" + String.valueOf(currentPage+1) 
+                + " T:" + String.valueOf(totalPages));
+        jTxtArea.setEditable(false);
+        
         //Create Dropdown list for stroke Size selection
         strokeSizes = new Vector();
         strokeSizes.add(1);
@@ -462,6 +481,10 @@ public class DrawClient{
         cons.gridy = 0;
         buttonsPanel.add(strokeSizesBox, cons);
         
+        cons.gridx = 7;
+        cons.gridy = 0;
+        buttonsPanel.add(jTxtArea, cons);
+        
         //Color Chooser implementation
         colChs = new JColorChooser();
         colChs.setPreviewPanel(new JPanel());
@@ -492,87 +515,125 @@ public class DrawClient{
         updatePageButton();
     }
     
+    /**
+     * Returns the container JPanel which is used to set the contentPane for
+     * the Window.
+     * 
+     */
     public JPanel getPanel()
     {
         return container;
     }
     
-    //Cordinate class
-    public static class Points implements Serializable {
-        private int x;
-        private int y;
-        private int page;
-        private int strokeSize;
-        private Color drawColor;
-        private long timeDrawn;
-        
-        
-        Points(int x, int y, Color drawColor, int page, long timeDrawn
-                , int strokeSize) {
-            this.x = x;
-            this.y = y;
-            this.drawColor = drawColor;
-            this.page = page;
-            this.timeDrawn = timeDrawn;
-            this.strokeSize = strokeSize;
-        }
-
-        public int getX() {
-            return x;
-        }
-
-        public int getY() {
-            return y;
-        }
-
-        public Color getDrawColor()
-        {
-            return drawColor;
-        }
-        
-        public int getPage()
-        {
-            return page;
-        }
-        
-        public int getStrokeSize()
-        {
-            return strokeSize;
-        }
-        
-        public void setDrawColor(Color color)
-        {
-            this.drawColor = color;
-        }
-        
-                
-        public void setPage(int page)
-        {
-            this.page = page;
-        }
+    /**
+     * Exports the image of the currently drawn page to a file of the
+     * Users choice.
+     * 
+     */
+    private void exportImage()
+    {
+            BufferedImage bi = new BufferedImage(container.getSize().width,
+            container.getSize().height, BufferedImage.TYPE_INT_ARGB); 
+            Graphics g = bi.createGraphics();
+            drawingPanel.paint(g);
+            g.dispose(); //Clear up system resources
+            File f = saveMenu();
+            if (f != null)
+            {
+                try 
+                {
+                    ImageIO.write(bi,"png", f);
+                } catch (Exception e) 
+                {}
+            }        
     }
     
+    /**
+     * Opens a open menu dialog and returns a file with the cannonical path 
+     * and filename set.
+     * 
+     * @return  A File with the cannonical name and path if saved.   Else the
+     *          Method will return null.
+     */
+    public File openMenu()
+    {
+        int returnVal = jFC.showOpenDialog(menuItems.get(0).get(1));
+        if (returnVal == JFileChooser.APPROVE_OPTION) 
+        {
+            File file2 = jFC.getSelectedFile();
+            return file2;
+        }
+        return null;
+    }
+    
+    /**
+     * Opens a save menu dialog and returns a file with the cannonical path 
+     * and filename set.
+     * 
+     * @return  A File with the cannonical name and path if saved.   Else the
+     *          Method will return null.
+     */
+    public File saveMenu()
+    {
+        int returnVal = jFC.showSaveDialog(menuItems.get(0).get(2));
+        if (returnVal == JFileChooser.APPROVE_OPTION) 
+        {
+            File file2 = jFC.getSelectedFile();
+            return file2;
+        }
+        return null;
+    }
+    
+    /**
+     *  openFile() prompts the user to select a folder and begins to playback
+     *  the file chosen if it is valid. If no action is taken by the user
+     *  to provide a file, nothing will happen.
+     * 
+     */
     public void openFile()
     {
-        isProducerState = false;
-        drawingPanel.removeMouseListener(ml);
-        drawingPanel.removeMouseMotionListener(mml);
-        newBoard();
-        menuItems.get(0).get(2).setEnabled(false);
-        /**
-         * Implement File Opening Code here
-         * 
-         * 
-         * 
-         * 
-         * 
-         * 
-         * 
-         * 
-         * 
-         */
+        fName = openMenu();
+        if (fName != null)
+        {
+            /**
+             * Implement File Validation
+             * 
+             * 
+             * 
+             * 
+             * 
+             * 
+             * 
+             * 
+             * 
+             */
+//            if (valid) 
+//            {
+//                isProducerState = false;
+//                drawingPanel.removeMouseListener(ml);
+//                drawingPanel.removeMouseMotionListener(mml);
+//                newBoard();
+//                //Disable the Record button
+//                menuItems.get(0).get(3).setEnabled(false);
+//            }
+//            else
+//            {
+//                //Do Nothing
+//            }
+            
+            /**
+             * Implement file Parsing
+             */
+            
+        }
+        
     }
     
+    /**
+     *  initRecording() sets the client into a recording state or takes it out
+     *  of one. If the client is called
+     * 
+     */
     public void initRecording()
     {
         isRecordingState = !isRecordingState;
@@ -582,13 +643,17 @@ public class DrawClient{
                 //File (0) -> Open(2)
                 menuItems.get(0).get(1).setEnabled(false);
                 //File (0) -> Record (2)
-                menuItems.get(0).get(2).setText("Stop Recording");
+                menuItems.get(0).get(3).setText("Stop Recording");
                 recordEndTime = 0;
                 recordStartTime = System.nanoTime();
-                fName = new File("Points.txt");
-                fName.createNewFile();
+                fName = openMenu();
+                //Create the file if it doesn't exisit
+                if (!fName.exists())
+                {
+                    fName = openMenu();
+                }
                 fileIn = new FileInputStream(fName);
-            } catch (FileNotFoundException ex) {
+            } catch (Throwable ex) {
                 System.out.println("File Not Found!");
                 
                 //Reset Recording State and subMenu
@@ -596,7 +661,7 @@ public class DrawClient{
                 //File (0) -> Open(2)
                 menuItems.get(0).get(1).setEnabled(true);
                 //File (0) -> Stop Recording (2)
-                menuItems.get(0).get(2).setText("Record");
+                menuItems.get(0).get(3).setText("Record");
             }
         }
         else
@@ -604,12 +669,17 @@ public class DrawClient{
             //File (0) -> Open(2)
             menuItems.get(0).get(1).setEnabled(true);
             //File (0) -> Stop Recording (2)
-            menuItems.get(0).get(2).setText("Record");
+            menuItems.get(0).get(3).setText("Record");
             recordEndTime = System.nanoTime() - recordStartTime;
         }
     }
     
-    private void lineUndo()
+    /**
+     *  lineUndo() removes the last line drawn from the book on the currentPage
+     *  off the client and pushes that line onto a stack.
+     * 
+     */
+    public void lineUndo()
     {
         if (!book.get(currentPage).isEmpty())
         {   
@@ -641,7 +711,12 @@ public class DrawClient{
         }
     }
     
-    private void lineRedo()
+    /**
+     *  lineRedo() pops the last element pushed onto the stack and adds it
+     *  back into the line of the current page.
+     * 
+     */
+    public void lineRedo()
     {
         if (!undoBuffer.empty())
         {
@@ -672,14 +747,26 @@ public class DrawClient{
         }
     }
     
+    /**
+     *  nextPage() adds a new page to the book if needed repaints the drawPanel
+     *  to the current page. Calls updatePageButton() and updatePageCounter();
+     * 
+     */
     private void nextPage()
     {
         try
         {
-            book.add(new ArrayList<>());
             currentPage++;
-            totalPages++;
+            //Check if a new Page needs to be added or wether the user is just
+            //  cycling between existing ones.
+            if (currentPage == totalPages)
+            {
+                System.out.println("Adding a new page");
+                book.add(new ArrayList<>());
+                totalPages++;
+            }
             updatePageButton();
+            updatePageCounter();
             drawingPanel.repaint();
         } catch(Throwable ex)
         {
@@ -709,6 +796,11 @@ public class DrawClient{
         }
     }
     
+    /**
+     *  prevPage() adds repaints the drawPanel to the last page. 
+     *  Calls updatePageButton() and updatePageCounter();
+     * 
+     */
     private void prevPage()
     {
         if (currentPage != 0)
@@ -717,6 +809,7 @@ public class DrawClient{
             {
                 currentPage--;
                 updatePageButton();
+                updatePageCounter();
                 drawingPanel.repaint();
             } catch(Throwable ex)
             {
@@ -746,6 +839,11 @@ public class DrawClient{
         }
     }
     
+    /**
+     *  clearUndoBuffer() clears the undoBuffer stack and is usually called
+     *  when an action is performed that overwrite previous lines.
+     * 
+     */
     private void clearUndoBuffer()
     {
         if (!undoBuffer.empty())
@@ -754,6 +852,11 @@ public class DrawClient{
         }
     }
     
+    /**
+     *  newBoard() initalizes all the Container items to a brand new state,
+     *  along with variables.
+     * 
+     */
     private void newBoard()
     {
         currentPage = 0;
@@ -769,6 +872,11 @@ public class DrawClient{
         drawingPanel.repaint();
     }
     
+    /**
+     *  setMenuState() Disables or enables menuItem options based on 
+     *  the isProducerState
+     * 
+     */
     private void setMenuItemStates()
     {
         //Disable or enable Edit options and view option based on isProducerState
@@ -780,10 +888,15 @@ public class DrawClient{
         menuItems.get(2).get(1).setEnabled(isProducerState);
         
         //Disable or Enable Record button
-        menuItems.get(0).get(2).setEnabled(isProducerState);
+        menuItems.get(0).get(3).setEnabled(isProducerState);
 
     }
     
+    /**
+     *  updateRedoButton() checks whether to enable or disable the Redo button
+     *  based on if the undoBuffer has items or not.
+     * 
+     */
     private void updateRedoButton()
     {
         if (isProducerState)
@@ -801,6 +914,18 @@ public class DrawClient{
         }
     }
     
+    /**
+     *  updatePageButton() checks if the client is in a producing state.
+     *  isProducerState == true - Client is Producing
+     *          Disable or enable the page browse buttons.
+     *          Checks if the client is Recording
+     *          isRecordingState == true -
+     *                  Output a keyword to the file for input reading later on
+     *                  to let the client know a page has been changed.
+     * 
+     *  isProducerState == false - Client is Consuming
+     *          Disable or enable the page browse buttons based on input.
+     */
     private void updatePageButton()
     {
         //The Client is in a Producing State
@@ -861,6 +986,22 @@ public class DrawClient{
         }
     }
     
+    /**
+     *  updatePageCount() updates the jTxtArea field with the current page
+     *  and the running total of pages.
+     * 
+     */
+    private void updatePageCounter()
+    {
+        jTxtArea.setText("C:" + String.valueOf(currentPage+1) 
+                + " T:" + String.valueOf(totalPages));
+    }
+    
+    /**
+     *  updatePageCount() initalizes buttons to the current state of 
+     *  isProducerState. Used to quickly init.
+     * 
+     */
     private void buttonInit()
     {
         prevPageButton.setEnabled(isProducerState);
