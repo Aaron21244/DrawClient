@@ -304,9 +304,11 @@ public class DrawClient{
         menuItems.get(menuItems.size()-1).add(newMenuItem);
         
         
-        ml = new MouseAdapter() {
+        ml = new MouseAdapter() 
+        {
             @Override
-            public void mousePressed(MouseEvent evt) {
+            public void mousePressed(MouseEvent evt) 
+            {
 
                 //call the clearUndoBuffer function
                 clearUndoBuffer();
@@ -338,14 +340,17 @@ public class DrawClient{
             }
         };
         
-        mml = new MouseAdapter() {
+        mml = new MouseAdapter() 
+        {
             @Override
-            public void mouseDragged(MouseEvent evt) {
+            public void mouseDragged(MouseEvent evt) 
+            {
 
                 //call the clearUndoBuffer function
                 clearUndoBuffer();
 
-                try {
+                try 
+                {
                     System.out.println("MouseDragged");
 
                     //Store the current point into a temp Point varible
@@ -493,7 +498,8 @@ public class DrawClient{
         colChs.setColor(Color.BLACK);
         //Remove the unused color chooser panes
         AbstractColorChooserPanel[] panels=colChs.getChooserPanels();
-        for(AbstractColorChooserPanel p:panels){
+        for(AbstractColorChooserPanel p:panels)
+        {
             String displayName=p.getDisplayName();
             switch (displayName) {
                 case "HSV":
@@ -639,6 +645,26 @@ public class DrawClient{
      */
     public void initRecording()
     {
+        //Create new recording thread
+        Thread audioRecorderThread;
+        AudioRecorder audioRecorder = new AudioRecorder();
+        audioRecorderThread = new Thread(audioRecorder);
+        //Create new stop recording thread
+        Thread audioRecorderStopperThread = new Thread(new Runnable() 
+        {
+            public void run() 
+            {
+                while(true) 
+                {
+                    System.out.println("Current recording state: " + isRecordingState);
+                    if(!isRecordingState) 
+                    {
+                        audioRecorder.stopRecording();
+                        return;
+                    }
+                }
+            }
+        });
         //If the client is NOT in a recording state
         if (!isRecordingState)
         {
@@ -663,25 +689,9 @@ public class DrawClient{
                 objOS = new ObjectOutputStream(fileOut);
                 objOS.writeObject(recordStartTime);
                 flushOS(objOS);
-                
-                /**
-                 * 
-                 * 
-                 * 
-                 * 
-                 * Throw thread for recording thread for voice here
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 */
-                
+                //Start Recording
+                audioRecorderThread.start();
+                audioRecorderStopperThread.start();
             } 
             catch (Throwable ex) 
             {
@@ -704,7 +714,6 @@ public class DrawClient{
                 objOS.writeObject(recordEndTime);
                 flushOS(objOS);
                 objOS.close();
-                
                 /**
                  * 
                  * 
@@ -1053,6 +1062,24 @@ public class DrawClient{
         redoButton.setEnabled(isProducerState);
         colorsPanel.setVisible(isProducerState);
         buttonsPanel.setVisible(isProducerState);
+    }
+    
+    /**
+     * 
+     * Returns isProducerState 
+     */
+    public boolean getIsProducerState() 
+    {
+        return isProducerState;
+    }
+    
+    /**
+     * 
+     * Returns isRecordingState
+     */
+    public boolean getIsRecordingState() 
+    {
+        return isRecordingState;
     }
     
     public static void main(String[] args) 
