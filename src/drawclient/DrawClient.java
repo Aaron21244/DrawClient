@@ -121,6 +121,11 @@ public class DrawClient{
     ObjectOutputStream objOS;    
     File fName;
     
+    //Sound Variables
+    //Create new recording thread
+    Thread audioRecorderThread;
+    AudioRecorder audioRecorder = new AudioRecorder();
+    
     DrawClient()
     {
         //Initalize the book of Points
@@ -892,26 +897,7 @@ public class DrawClient{
      */
     public void initRecording()
     {
-        //Create new recording thread
-        Thread audioRecorderThread;
-        AudioRecorder audioRecorder = new AudioRecorder();
-        audioRecorderThread = new Thread(audioRecorder);
-        //Create new stop recording thread
-        Thread audioRecorderStopperThread = new Thread(new Runnable() 
-        {
-            public void run() 
-            {
-                while(true) 
-                {
-                    if(!isRecordingState) 
-                    {
-                        audioRecorder.stopRecording();
-                        return;
-                    }
-                }
-            }
-        });
-        
+       
         //If the client is NOT in a recording state
         if (!isRecordingState)
         {
@@ -920,6 +906,7 @@ public class DrawClient{
             isRecordingState = true;
             try 
             {
+                audioRecorderThread = new Thread(audioRecorder);
                 //File (0) -> Open(2)
                 menuItems.get(0).get(1).setEnabled(false);
                                 drawingPanel.setEnabled(false);
@@ -940,7 +927,6 @@ public class DrawClient{
                 objOS.writeObject(FILE_VALIDATE_BYTE);
                 //Start Recording
                 audioRecorderThread.start();
-                audioRecorderStopperThread.start();
             } 
             catch (Throwable ex) 
             {
@@ -964,6 +950,7 @@ public class DrawClient{
                 objOS.writeObject(recordEndTime);
                 flushOS(objOS);
                 objOS.close();
+                audioRecorder.stopRecording();
                 
                 //Reset Recording State and subMenu
                 isRecordingState = false;
