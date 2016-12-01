@@ -1,11 +1,13 @@
 package drawclient;
 
 import java.io.File;
+import java.io.IOException;
 import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.DataLine;
+import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.TargetDataLine;
 
 /**
@@ -28,7 +30,7 @@ public class AudioRecorder implements Runnable
     
     //This needs to be changed to use a user defined filename and format
     String fileFormat = "wav";
-    String fileName = "Audio." + System.nanoTime() + "." + fileFormat;
+    String fileName = "Audio" + "." + fileFormat;
     File file = new File(fileName);
     AudioFileFormat.Type fileType = AudioFileFormat.Type.WAVE;
     
@@ -65,6 +67,7 @@ public class AudioRecorder implements Runnable
                     new AudioInputStream(targetDataLine);
             //Start recording
             AudioSystem.write(audioInputStream, fileType, file);
+            System.out.println("Past the .write");
         } 
         catch(Throwable ex) 
         {

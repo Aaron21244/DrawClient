@@ -25,6 +25,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Stack;
 import java.util.Vector;
@@ -81,6 +85,7 @@ public class DrawClient{
     
     //Stroke Sizes holds the current selections of brush sizes available
     Vector strokeSizes;
+    ArrayDeque pointsQueue;
     
     //Mouselisteners declared global so they can be add 
     //  and removed during runtime
@@ -94,16 +99,20 @@ public class DrawClient{
     //Book of pages, lines, cords
     ArrayList<ArrayList<ArrayList<Points>>> book;
     private int currentPage;
+    private int playBackPage;
     private int totalPages;
     private int strokeSizeSel; 
+    final byte FILE_VALIDATE_BYTE = 0x0F;
+
     
     //isProducerState holds wether the client is in producer or consumer mode
     private boolean isProducerState;
     
     //Recording Variables
     private boolean isRecordingState;
-    long recordStartTime;
-    long recordEndTime;
+    private long playBackStartTime;
+    private long recordStartTime;
+    private long recordEndTime;
     
     //File IO Variables
     FileOutputStream fileOut;
@@ -147,7 +156,6 @@ public class DrawClient{
             public void paintComponent(Graphics g)
             {
                 super.paintComponent(g);
-                System.out.println("in the repaint");
                 //G2 will be used for drawing the lines and setting stroke width
                 Graphics2D g2 = (Graphics2D) g;
                 g2.setRenderingHint(
@@ -161,33 +169,69 @@ public class DrawClient{
                         , RenderingHints.VALUE_COLOR_RENDER_QUALITY);
                 if (!book.isEmpty())
                 {
-                    for(int i = 0; i < book.get(currentPage).size(); i++)
-                    {
-                        for (int j = 0; j < book.get(currentPage).get(i).size(); j++)
+                    //We are producing in this state, keep the page being drawn
+                    //  constant.
+//                    if (isProducerState)
+//                    {
+                        for(int i = 0; i < book.get(currentPage).size(); i++)
                         {
-                            try 
+                            for (int j = 0; j < book.get(currentPage).get(i).size(); j++)
                             {
-                               // System.out.println(book.get(currentPage).get(i).size());
-                                Points pt2 = book.get(currentPage).get(i).get(j);
-                                g2.setColor(book.get(currentPage).get(i).get(j).getDrawColor());
-                                g2.setStroke(new BasicStroke(pt2.getStrokeSize()));
-                                
-                                if(j != 0)
+                                try 
                                 {
-                                    Points pt1 = book.get(currentPage).get(i).get(j-1);
-                                    g2.drawLine(pt1.getX(), pt1.getY(), pt2.getX(), pt2.getY());
+
+                                    Points pt2 = book.get(currentPage).get(i).get(j);
+                                    g2.setColor(book.get(currentPage).get(i).get(j).getDrawColor());
+                                    g2.setStroke(new BasicStroke(pt2.getStrokeSize()));
+
+                                    if(j != 0)
+                                    {
+                                        Points pt1 = book.get(currentPage).get(i).get(j-1);
+                                        g2.drawLine(pt1.getX(), pt1.getY(), pt2.getX(), pt2.getY());
+                                    }
+                                    else
+                                    {
+                                        g2.drawLine(pt2.getX(), pt2.getY(), pt2.getX(), pt2.getY());
+                                    }
                                 }
-                                else
-                                {
-                                    g2.drawLine(pt2.getX(), pt2.getY(), pt2.getX(), pt2.getY());
+                                catch(Throwable e)
+                                { 
+                                    e.printStackTrace(); 
                                 }
-                            }
-                            catch(Throwable e)
-                            { 
-                                e.printStackTrace(); 
                             }
                         }
-                    }
+                   // }
+//                    //We are consuming! Let the user switch pages at will
+//                    else
+//                    {
+//                        for(int i = 0; i < book.get(playBackPage).size(); i++)
+//                        {
+//                            for (int j = 0; j < book.get(playBackPage).get(i).size(); j++)
+//                            {
+//                                try 
+//                                {
+//
+//                                    Points pt2 = book.get(playBackPage).get(i).get(j);
+//                                    g2.setColor(book.get(playBackPage).get(i).get(j).getDrawColor());
+//                                    g2.setStroke(new BasicStroke(pt2.getStrokeSize()));
+//
+//                                    if(j != 0)
+//                                    {
+//                                        Points pt1 = book.get(playBackPage).get(i).get(j-1);
+//                                        g2.drawLine(pt1.getX(), pt1.getY(), pt2.getX(), pt2.getY());
+//                                    }
+//                                    else
+//                                    {
+//                                        g2.drawLine(pt2.getX(), pt2.getY(), pt2.getX(), pt2.getY());
+//                                    }
+//                                }
+//                                catch(Throwable e)
+//                                { 
+//                                    e.printStackTrace(); 
+//                                }
+//                            }
+//                        }
+//                    }
                 }
             }
             
@@ -196,6 +240,11 @@ public class DrawClient{
         //Initalize the button and Color Panels
         buttonsPanel = new JPanel(gbl);
         colorsPanel = new JPanel(gbl);
+        playBackToolsPanel = new JPanel(gbl);
+        //Disable the playBackToolsPanel by default
+        //  Because the client starts in Producer mode
+        playBackToolsPanel.setVisible(true);
+        playBackToolsPanel.setEnabled(false);
         
         //Initalize the JMenuBar and its various member
         //  Each newMenuItem is pushed into an arrayList for manipulating during
@@ -303,7 +352,7 @@ public class DrawClient{
         fileMenu.add(newMenuItem);
         menuItems.get(menuItems.size()-1).add(newMenuItem);
         
-        
+        //Mouse Listener
         ml = new MouseAdapter() 
         {
             @Override
@@ -313,22 +362,35 @@ public class DrawClient{
                 //call the clearUndoBuffer function
                 clearUndoBuffer();
                 try {
-                    System.out.println("In MousePressed");
-                    //Store the current point into a temp Point varible
-                    Points point = new Points(evt.getX(),evt.getY(),
-                            colChs.getColor(), currentPage
-                            , System.nanoTime(), strokeSizeSel);
-
+                    Points point;
+                    //Check if the client is recording
+                    if (isRecordingState)
+                    {
+                        //Store the current point into a temp Point varible
+                        //  with the current elapsed time of the point
+                        point = new Points(evt.getX(),evt.getY(),
+                                colChs.getColor(), currentPage
+                                , System.nanoTime() - recordStartTime
+                                , strokeSizeSel);
+                        objOS.writeObject("\\newLine");
+                        flushOS(objOS);
+                        
+                        System.out.println("Printing with time");
+                        objOS.writeObject(point);
+                        flushOS(objOS);
+                    }
+                    {
+                        //Store the current point into a temp Point varible
+                        //  with out any order
+                        point = new Points(evt.getX(),evt.getY(),
+                                colChs.getColor(), currentPage
+                                , System.nanoTime(), strokeSizeSel);
+                    }
                     //Add a new line
                     book.get(currentPage).add(new ArrayList<>());
                     //Add the point varible to the book->page->line
                     book.get(currentPage).get(book.get(currentPage).size()-1)
                             .add(point);
-                    if (isRecordingState)
-                    {
-                        objOS.writeObject(point);
-                        flushOS(objOS);
-                    }
                 } catch (Throwable ex) 
                 {
                     ex.printStackTrace();
@@ -340,6 +402,7 @@ public class DrawClient{
             }
         };
         
+        //Mouse Motion Listener
         mml = new MouseAdapter() 
         {
             @Override
@@ -351,21 +414,32 @@ public class DrawClient{
 
                 try 
                 {
-                    System.out.println("MouseDragged");
-
-                    //Store the current point into a temp Point varible
-                    Points point = new Points(evt.getX(),evt.getY(),
-                            colChs.getColor(), currentPage, 
-                            System.nanoTime(), strokeSizeSel);
+                    Points point;
+                    //Check if the client is recording
+                    if (isRecordingState)
+                    {
+                        //Store the current point into a temp Point varible
+                        //  with the current elapsed time of the point
+                        point = new Points(evt.getX(),evt.getY(),
+                                colChs.getColor(), currentPage
+                                , System.nanoTime() - recordStartTime
+                                , strokeSizeSel);
+                        
+                        System.out.println("Printing with time");
+                        objOS.writeObject(point);
+                        flushOS(objOS);
+                    }
+                    {
+                        //Store the current point into a temp Point varible
+                        //  with out any order
+                        point = new Points(evt.getX(),evt.getY(),
+                                colChs.getColor(), currentPage
+                                , System.nanoTime(), strokeSizeSel);
+                    }
 
                     //Add the point varible to the book->page->line
                     book.get(currentPage).get(book.get(currentPage).size()-1)
                             .add(point);
-                    if (isRecordingState)
-                    {
-                        objOS.writeObject(point);
-                        flushOS(objOS);
-                    }
                 } catch (Throwable ex) {
                     ex.printStackTrace();
                     System.out.println("Error in mouseDragged");
@@ -457,6 +531,16 @@ public class DrawClient{
         cons.fill = GridBagConstraints.BOTH;
         container.add(buttonsPanel, cons);
         
+        //playBackToolsPanel Panel
+        playBackToolsPanel.setBackground(Color.lightGray);
+        cons.gridx = 0;
+        cons.gridy = 4;
+        cons.weightx = .5;
+        cons.weighty = .01;
+        cons.gridwidth = 1;   //2 columns wide
+        cons.fill = GridBagConstraints.HORIZONTAL;
+        container.add(playBackToolsPanel, cons);
+        
         cons.gridx = 0;
         cons.gridy = 0;
         cons.weightx = 0;
@@ -488,9 +572,17 @@ public class DrawClient{
         cons.gridy = 0;
         buttonsPanel.add(strokeSizesBox, cons);
         
-        cons.gridx = 7;
+        cons.gridx = 2;
         cons.gridy = 0;
-        buttonsPanel.add(jTxtArea, cons);
+        playBackToolsPanel.add(jTxtArea, cons);
+        
+        cons.gridx = 0;
+        cons.gridy = 0;
+        playBackToolsPanel.add(prevPageButton, cons);
+        
+        cons.gridx = 1;
+        cons.gridy = 0;
+        playBackToolsPanel.add(nextPageButton, cons);
         
         //Color Chooser implementation
         colChs = new JColorChooser();
@@ -541,20 +633,20 @@ public class DrawClient{
      */
     private void exportImage()
     {
-            BufferedImage bi = new BufferedImage(container.getSize().width,
-            container.getSize().height, BufferedImage.TYPE_INT_ARGB); 
-            Graphics g = bi.createGraphics();
-            drawingPanel.paint(g);
-            g.dispose(); //Clear up system resources
-            File f = saveMenu();
-            if (f != null)
+        BufferedImage bi = new BufferedImage(container.getSize().width,
+        container.getSize().height, BufferedImage.TYPE_INT_ARGB); 
+        Graphics g = bi.createGraphics();
+        drawingPanel.paint(g);
+        g.dispose(); //Clear up system resources
+        File f = saveMenu();
+        if (f != null)
+        {
+            try 
             {
-                try 
-                {
-                    ImageIO.write(bi,"png", f);
-                } catch (Exception e) 
-                {}
-            }        
+                ImageIO.write(bi,"png", f);
+            } catch (Exception e) 
+            {}
+        }        
     }
     
     /**
@@ -596,7 +688,8 @@ public class DrawClient{
     /**
      *  openFile() prompts the user to select a folder and begins to playback
      *  the file chosen if it is valid. If no action is taken by the user
-     *  to provide a file, nothing will happen.
+     *  to provide a file, nothing will happen. This function also loads the
+     *  points.txt. into memory.
      * 
      */
     public void openFile()
@@ -604,43 +697,197 @@ public class DrawClient{
         fName = openMenu();
         if (fName != null)
         {
-            /**
-             * Implement File Validation
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             * 
-             */
-//            if (valid) 
-//            {
-//                isProducerState = false;
-//                drawingPanel.removeMouseListener(ml);
-//                drawingPanel.removeMouseMotionListener(mml);
-//                newBoard();
-//                //Disable the Record button
-//                menuItems.get(0).get(3).setEnabled(false);
-//            }
-//            else
-//            {
-//                //Do Nothing
-//            }
-            
-            /**
-             * Implement file Parsing
-             */
-            
+            if (fName.exists())
+            {
+                try {
+                    isProducerState = false;
+                    drawingPanel.removeMouseListener(ml);
+                    drawingPanel.removeMouseMotionListener(mml);
+                    newBoard();
+                    //Disable buttons panel and colors panel
+                    updatePanels();
+                    //Disable the Record button
+                    menuItems.get(0).get(3).setEnabled(false);
+
+                    //Initialize file input variables with fName
+                    fileIn = new FileInputStream(fName);
+                    objIS = new ObjectInputStream(fileIn);
+                    //Temporary object delcared for reading in objects
+                    Object temp;
+                    boolean fileEnd = false;
+                    System.out.println("Reading Object");
+
+                    //Initalize the ArrayDeque by reading from it store objects 
+                    pointsQueue = new ArrayDeque<Object>();
+
+                    //Validate the file. The first line will always be a long
+                    temp = objIS.readObject();
+                    
+                    //Validate the file
+                    if ((byte)temp == FILE_VALIDATE_BYTE)
+                    {
+                        while (!fileEnd)
+                        {
+                            temp = objIS.readObject();
+
+                            //That last line of the file will always be a long
+                            //  stop if this case is hit
+                            if (temp instanceof Long)
+                            {
+                                //Read the ending time and exit the while loop
+                                System.out.println("Last: " + (long) temp);
+                                //Stop reading file
+                                fileEnd = true;
+                            }
+                            else if (temp instanceof Points)
+                            {
+                                pointsQueue.add(temp);
+                            }
+                            else if (temp instanceof String)
+                            {
+                                String command = (String) temp;
+                                switch ((String) temp)
+                                {
+                                    case "\\newLine":
+                                        pointsQueue.add(temp);
+                                        break;
+                                    case "\\lineUndo":
+                                        pointsQueue.add(temp);
+                                        break;
+                                    case "\\lineRedo":
+                                        pointsQueue.add(temp);
+                                        break;
+                                    case "\\nextPage":
+                                        pointsQueue.add(temp);
+                                        updatePageButton();
+                                        break;
+                                    case "\\prevPage":
+                                        pointsQueue.add(temp);
+                                        updatePageButton();
+                                        break;
+                                    default:
+                                        System.out.println("Unknown Command: " 
+                                                + command);
+                                }
+                            }
+                            else if (temp instanceof Integer)
+                            {
+                               pointsQueue.add(temp);
+                               //System.out.println((int)temp);
+                            }
+                        }
+                    }
+                } catch (Throwable ex) {
+                    ex.printStackTrace();
+                    System.out.println("Error in openFile() inputStream");
+                }
+                //Set the playStartTime
+                playBackStartTime = System.nanoTime();
+                
+                //Create new recording thread
+                Thread startPlayBackThread;
+                startPlayBack startplayBack = new startPlayBack();
+                startPlayBackThread = new Thread(startplayBack);
+                startPlayBackThread.start();
+                
+                //Create new audio play back thread
+                Thread audioPlayBackThread;
+                AudioPlayback audioPlayBack = new AudioPlayback("audio.wav");
+                audioPlayBackThread = new Thread(audioPlayBack);
+                audioPlayBackThread.start();
+            }
+            else
+            {
+                //File is not valid, do nothing
+            }
         }
-        
+        System.out.println("Exiting openFile()");
     }
     
     /**
-     *  initRecording() sets the client into a recording state or takes it out
-     *  of one. If the client is called
+     *  
+     *  startPlayBack begins file playback from reading the points.txt.
+     * 
+     */
+    public class startPlayBack implements Runnable
+    {
+        Object temp;
+        Points tempPoint;
+        boolean shouldPop = true;
+        
+        public void run()
+        {
+            playBackPage = 0;
+            //Start playback
+            while (!pointsQueue.isEmpty())
+            {
+                //Get the first element on the queue
+                if (shouldPop)
+                {
+                    temp = pointsQueue.pop();
+                    shouldPop = false;
+                }
+
+                if (temp instanceof Points)
+                {
+                    tempPoint = (Points) temp;
+                    
+                    if (tempPoint.getTimeDrawn() <= (System.nanoTime()-playBackStartTime))
+                    {
+                        shouldPop = true;
+                        //Add the point varible to the book->page->line
+                        book.get(playBackPage).get(book.get(playBackPage).size()-1)
+                                .add(tempPoint);
+                        drawingPanel.repaint();
+                    }
+                }
+                else if (temp instanceof String)
+                {
+                    String command = (String) temp;
+                    switch ((String) temp)
+                    {
+                        case "\\newLine":
+                            System.out.println("Newline!");
+                            book.get(currentPage).add(new ArrayList<>());
+                            shouldPop = true;
+                            break;
+                        case "\\lineUndo":
+                            shouldPop = true;
+                            lineUndo();
+                            break;
+                        case "\\lineRedo":
+                            shouldPop = true;
+                            lineRedo();
+                            break;
+                        case "\\nextPage":
+                            shouldPop = true;
+                            nextPage();
+                            break;
+                        case "\\prevPage":
+                            shouldPop = true;
+                            prevPage();
+                            break;
+                        default:
+                            System.out.println("Unknown Command: " 
+                                    + command);
+                    }
+                }
+                else if (temp instanceof Integer)
+                {
+                    shouldPop = true;
+                    playBackPage = (int) temp;
+                    updatePageButton();
+                    System.out.println(currentPage + " : " + totalPages + " : " + playBackPage);
+                }
+            }
+            System.out.println("Done playing back");
+        }
+    }
+    
+    /**
+     *  The first time initRecording() is called, it sets the client into a 
+     *  recording state. When called again, it takes it out of the 
+     *  recording state.
      * 
      */
     public void initRecording()
@@ -656,7 +903,6 @@ public class DrawClient{
             {
                 while(true) 
                 {
-                    System.out.println("Current recording state: " + isRecordingState);
                     if(!isRecordingState) 
                     {
                         audioRecorder.stopRecording();
@@ -665,30 +911,33 @@ public class DrawClient{
                 }
             }
         });
+        
         //If the client is NOT in a recording state
         if (!isRecordingState)
         {
             //Clear the board if anything currently exists before recording
             newBoard();
             isRecordingState = true;
-            try {
+            try 
+            {
                 //File (0) -> Open(2)
                 menuItems.get(0).get(1).setEnabled(false);
+                                drawingPanel.setEnabled(false);
+                colorsPanel.setEnabled(false);
                 //File (0) -> Record (2)
                 menuItems.get(0).get(3).setText("Stop Recording");
+
                 recordButton.setText("Stop Recording");
                 recordEndTime = 0;
                 recordStartTime = System.nanoTime();
-                //Create a temporary directory named temp
-                //  to hold all the file
-                fName = new File("temp");
-                fName.mkdir();
+                
                 //Create the file to holds the serialized points class
                 fName = new File("points.txt");
                 fileOut = new FileOutputStream(fName);
                 objOS = new ObjectOutputStream(fileOut);
-                objOS.writeObject(recordStartTime);
-                flushOS(objOS);
+                
+                //Write the file Validation byte to the first line of the .txt
+                objOS.writeObject(FILE_VALIDATE_BYTE);
                 //Start Recording
                 audioRecorderThread.start();
                 audioRecorderStopperThread.start();
@@ -708,30 +957,13 @@ public class DrawClient{
         //  ends.
         else
         {
-            try {
+            try 
+            {
                 //Set the final time the program stopped recording
                 recordEndTime = System.nanoTime() - recordStartTime;
                 objOS.writeObject(recordEndTime);
                 flushOS(objOS);
                 objOS.close();
-                /**
-                 * 
-                 * 
-                 * 
-                 * Implement final voice implementations here
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 * 
-                 */
                 
                 //Reset Recording State and subMenu
                 isRecordingState = false;
@@ -745,8 +977,18 @@ public class DrawClient{
             menuItems.get(0).get(3).setText("Record");
             //Set the button back to normal
             recordButton.setText("Record");
-            //Call saveMenu() to prompt the user for a file to save as
-            fName = saveMenu();
+//            //Call saveMenu() to prompt the user for a file to save as
+//            fName = saveMenu();
+//            System.out.println(fName.getAbsolutePath());
+//]
+//            if(fName.renameTo(new File("C:\\folderB\\" + fName.getName())))
+//            {
+//                System.out.println("File is moved successful!");
+//            }
+//            else
+//            {
+//                System.out.println("File is failed to move!");   
+//            }
         }
     }
     
@@ -806,7 +1048,7 @@ public class DrawClient{
             updatePageButton();
             //If the client is in Recording mode
             //  Output a keyword to the file for input reading later on
-            //      to let the client know a the lineRedo() has been called.
+            //      to let the client  know a the lineRedo() has been called.
             if (isRecordingState)
             {
                 try {
@@ -834,7 +1076,6 @@ public class DrawClient{
             //  cycling between existing ones.
             if (currentPage == totalPages)
             {
-                System.out.println("Adding a new page");
                 book.add(new ArrayList<>());
                 totalPages++;
             }
@@ -851,13 +1092,13 @@ public class DrawClient{
         //      to let the client know a page has been changed.
         if (isRecordingState)
         {
-                try {
-                    objOS.writeObject("\\nextPage");
-                    flushOS(objOS);
-                } catch (IOException ex) {
-                    ex.printStackTrace();
-                    System.out.println("Error writing to file in lineRedo()");
-                }
+            try {
+                objOS.writeObject("\\nextPage");
+                flushOS(objOS);
+            } catch (IOException ex) {
+                ex.printStackTrace();
+                System.out.println("Error writing to file in lineRedo()");
+            }
         }
     }
     
@@ -1015,6 +1256,7 @@ public class DrawClient{
         //Else the Client is in a Consuming State
         else
         {
+            System.out.println("Not in prod state");
             //If the Current total pages are greater than 1
             //  Disable the previous button if we're on page 0
             //      Else Enable and enable the next page button
@@ -1024,7 +1266,13 @@ public class DrawClient{
                     prevPageButton.setEnabled(false);
                 else
                     prevPageButton.setEnabled(true);
-                nextPageButton.setEnabled(true);
+                
+                //Disable the next Page button if the user is on the most recent
+                //  page
+                if (currentPage == totalPages)
+                    nextPageButton.setEnabled(false);
+                else
+                    nextPageButton.setEnabled(true);
             }
             //Else if there is only one page
             //  Disable both the previous and the next Page Buttons
@@ -1033,6 +1281,24 @@ public class DrawClient{
                 prevPageButton.setEnabled(false);
                 nextPageButton.setEnabled(false);
             }
+        }
+    }
+    
+    /**
+     *  updatePanels() updates the viewing panels based on whether the client is
+     *  consuming or not.
+     */
+    private void updatePanels()
+    {
+        if (isProducerState)
+        {
+            buttonsPanel.setEnabled(true);
+            colorsPanel.setEnabled(true);
+        }
+        else
+        {
+            buttonsPanel.setEnabled(false);
+            colorsPanel.setEnabled(false);
         }
     }
     
@@ -1065,8 +1331,11 @@ public class DrawClient{
     }
     
     /**
+     *  getIsProducerState() returns the current state of the client.
+     *  true - producing.
+     *  false - consuming.
      * 
-     * Returns isProducerState 
+     * @returns isProducerState
      */
     public boolean getIsProducerState() 
     {
@@ -1074,8 +1343,11 @@ public class DrawClient{
     }
     
     /**
+     *  getIsRecordingState() returns the current state of the client.
+     *  true - recording.
+     *  false - not-recording.
      * 
-     * Returns isRecordingState
+     * @returns isRecordingState
      */
     public boolean getIsRecordingState() 
     {

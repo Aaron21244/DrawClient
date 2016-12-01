@@ -49,6 +49,11 @@ public class Points implements Serializable {
             return page;
         }
         
+        public long getTimeDrawn()
+        {
+            return timeDrawn;
+        }
+        
         public int getStrokeSize()
         {
             return strokeSize;

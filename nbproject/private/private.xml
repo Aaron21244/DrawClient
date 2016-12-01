@@ -3,8 +3,11 @@
     <editor-bookmarks xmlns="http://www.netbeans.org/ns/editor-bookmarks/2" lastBookmarkId="0"/>
     <open-files xmlns="http://www.netbeans.org/ns/projectui-open-files/2">
         <group>
-            <file>file:/C:/Users/rcarroll/Google%20Drive/_CourseWork/Fall%2016/COSC422/Assignments/Final/DrawClient/src/drawclient/AudioRecorder.java</file>
-            <file>file:/C:/Users/rcarroll/Google%20Drive/_CourseWork/Fall%2016/COSC422/Assignments/Final/DrawClient/src/drawclient/DrawClient.java</file>
+            <file>file:/C:/Users/Aaron/Documents/GitHub/DrawClient/src/drawclient/startPlayBack.java</file>
+            <file>file:/C:/Users/Aaron/Documents/GitHub/DrawClient/src/drawclient/AudioRecorder.java</file>
+            <file>file:/C:/Users/Aaron/Documents/GitHub/DrawClient/src/drawclient/AudioPlayback.java</file>
+            <file>file:/C:/Users/Aaron/Documents/GitHub/DrawClient/src/drawclient/Points.java</file>
+            <file>file:/C:/Users/Aaron/Documents/GitHub/DrawClient/src/drawclient/DrawClient.java</file>
         </group>
     </open-files>
 </project-private>
